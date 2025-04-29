@@ -1,6 +1,6 @@
 """
 title: n8n Pipe Function with Advanced File Support
-author: Cole Medin (Original), Enhanced & Merged Implementation
+author: Cole Medin (Original), Enhanced & Merged Implementation (Benedikt Glaß)
 author_url: [https://www.youtube.com/@ColeMedin](https://www.youtube.com/@ColeMedin)
 version: 0.4.0
 
@@ -87,6 +87,14 @@ class Pipe:
         group_files_by_type: bool = Field(
             default=False,
             description="Group files by type in the payload (JSON mode only).",
+        )
+        prefer_uploaded_file_bytes: bool = Field(
+            default=True,
+            description="For non-image files: If True, load from uploads directory (raw bytes). If False, use extracted content from body. Images are always taken from the body as base64.",
+        )
+        openwebui_data_path: str = Field(
+            default="/app/backend/data",
+            description="Parent directory for OpenWebUI uploads (should contain 'uploads' subdir).",
         )
 
         # OpenWebUI Configuration (for fetching files)
@@ -394,7 +402,7 @@ class Pipe:
         if self.valves.debug_mode:
             print("\n\n============ ENHANCED N8N PIPE FUNCTION CALLED ============")
             print(f"BODY KEYS: {list(body.keys() if isinstance(body, dict) else [])}")
-            print(f"BODY : {body}")
+            #print(f"BODY : {body}")
             print(f"MESSAGES: {len(messages) if messages else 0} messages")
             print(f"__files__: {'Present' if __files__ else 'Not present'}")
             if __files__:
@@ -537,6 +545,14 @@ class Pipe:
             log.info(f"Extracted {len(multimodal_images)} base64 images from body messages.")
             uploaded_files_info = list(uploaded_files_info) + multimodal_images
 
+        # Helper to check if a file is an image (by filename or content)
+        def _is_image_file(filename, content=None):
+            if filename and any(filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]):
+                return True
+            if content and isinstance(content, str) and content.startswith("data:image/"):
+                return True
+            return False
+
         if uploaded_files_info:
             file_stats["total"] = len(uploaded_files_info)
             log.info(f"Found {file_stats['total']} file references in the request.")
@@ -600,8 +616,39 @@ class Pipe:
                         content_bytes = None
                         file_type_info = None
 
-                        # Check if file_info has content directly
-                        if "content" in file_info:
+                        # Choose strategy for non-image files
+                        is_image = _is_image_file(filename, file_info.get("content"))
+                        prefer_upload = self.valves.prefer_uploaded_file_bytes
+                        # For images, always use content from body (already handled above)
+                        # For non-images, branch based on valve
+                        if is_image:
+                            # Always use content from body (already handled)
+                            log.debug(f"Image file '{filename}' - using body/base64 content.")
+                            # Existing logic below will process content from file_info
+                        elif prefer_upload and file_id:
+                            # Try to load from uploads directory
+                            try:
+                                # Use the correct uploads directory and pattern as per memories
+                                uploads_dir = os.path.join(os.environ.get("OPENWEBUI_DATA_PATH", "/app/backend/data"), "uploads")
+                                import glob
+                                pattern = os.path.join(uploads_dir, f"{file_id}_*")
+                                matches = glob.glob(pattern)
+                                if matches:
+                                    filepath = matches[0]
+                                    with open(filepath, "rb") as f:
+                                        content_bytes = f.read()
+                                    log.info(f"Loaded file '{filename}' from uploads directory as raw bytes.")
+                                    # For json_base64 mode, encode to base64
+                                    if self.valves.file_transfer_mode == "json_base64":
+                                        content = base64.b64encode(content_bytes).decode("utf-8")
+                                else:
+                                    log.warning(f"File ID {file_id} not found in uploads directory. Falling back to body content if available.")
+                                    # fallback to body content below
+                            except Exception as e:
+                                log.warning(f"Failed to load file '{filename}' from uploads: {e}. Falling back to body content if available.")
+                                # fallback to body content below
+                        # If not using uploads, or fallback
+                        if content_bytes is None and "content" in file_info:
                             content = file_info.get("content")
                             if isinstance(content, str):
                                 # Convert string content to bytes if needed
@@ -614,7 +661,7 @@ class Pipe:
                                     else:
                                         # Try to decode as base64 directly
                                         content_bytes = base64.b64decode(content)
-                                except:
+                                except Exception:
                                     # If not base64, treat as UTF-8 text
                                     content_bytes = content.encode("utf-8")
                             elif isinstance(content, bytes):

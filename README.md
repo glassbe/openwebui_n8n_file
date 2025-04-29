@@ -1,133 +1,122 @@
-# n8n Pipe with File Support
-
-## Overview
-
-This project provides a robust Python pipe for integrating OpenWebUI with n8n workflows, supporting advanced file handling:
-- **Text and binary file uploads** (including images, PDFs, etc.)
-- **Multiple transfer modes:** `json_base64` (files as base64 in JSON) and `multipart` (files as multipart/form-data)
-- **File size limits, type detection, and grouping**
-- **Async, robust, and ready for community use**
+# n8n Pipe for OpenWebUI – Community Guide
 
 ---
 
-## Features
+## What is this?
 
-- Send user messages and files from OpenWebUI to n8n endpoints.
-- Receive and display LLM or workflow responses in chat.
-- Handles files uploaded via OpenWebUI, including large and binary files.
-- Configurable via the `Valves` class.
-- Includes a comprehensive test suite.
+This repository provides a **plug-and-play Python function** for OpenWebUI that enables robust, flexible file transfer from OpenWebUI uploads (images, documents, etc.) directly to your n8n automations. It supports advanced features like type detection, size limits, grouping, and seamless integration—**no standalone Python execution required**.
 
 ---
 
-## Installation
+## How to Use with OpenWebUI
 
-1. **Clone or copy the files:**
-    - `n8n_pipe_v4.py`
-    - (Optional) `test_n8n_pipe_v4.py` for testing
+1. **Create Your Function in OpenWebUI**
+   - Go to the **Functions** panel in OpenWebUI.
+   - Click **Add Function** and give it a name (e.g., `n8n_pipe_files_v4`).
 
-2. **Install dependencies:**
+2. **Copy & Paste the Pipe Code**
+   - Open the `n8n_pipe_v4.py` file from this repository.
+   - Copy all its contents and paste them into your new OpenWebUI function.
 
-    On Ubuntu/Debian:
-    ```bash
-    apt install python3-pydantic python3-aiohttp python3-pytest python3-pytest-asyncio
-    ```
+3. **Configure the Valves**
+   - At the top of the pasted code, locate the `Valves` class.
+   - Set the following fields to match your environment:
+     - `n8n_url`: Your n8n webhook endpoint.
+     - `openwebui_data_path`: Parent directory for uploads (e.g., `/app/backend/data`).
+     - `file_transfer_mode`: `'json_base64'` or `'multipart'`.
+     - Adjust any other options as needed (see table below).
 
-    Or, using pip (if allowed):
-    ```bash
-    pip3 install pydantic aiohttp pytest pytest-asyncio
-    ```
+4. **Save and Use the Function**
+   - Save your function.
+   - In OpenWebUI, **select this function as a model** in your chat, workflow, or automation trigger.
+   - When you upload files via OpenWebUI, they will be automatically sent to your n8n workflow according to your configuration.
 
----
-
-## Configuration
-
-All configuration is handled via the `Pipe.Valves` class. Key options include:
-
-- `n8n_url`: Your n8n webhook endpoint.
-- `n8n_bearer_token`: Bearer token for n8n authentication.
-- `FILE_TRANSFER_MODE`: `'json_base64'` (default, best for OpenWebUI Docker) or `'multipart'`.
-- `OPENWEBUI_DATA_PATH`: Path to OpenWebUI's data directory (parent of `uploads/`).
-- `max_file_size_mb`: Maximum file size to process (default: 25MB).
-- `debug_mode`: Enable verbose logging for debugging.
-
-You can override these by editing the `Valves` class or setting them at runtime.
+5. **Test Your Setup**
+   - Upload a file in OpenWebUI and verify it reaches your n8n workflow as expected.
 
 ---
 
-## How File Uploads Work
+## Configuration Options (`Valves`)
 
-- **json_base64 mode:**  
-  Files are loaded from disk (using the pattern `<OPENWEBUI_DATA_PATH>/uploads/<file_id>_<original_filename>`) and base64-encoded into the outgoing JSON.
-- **multipart mode:**  
-  Files are fetched via HTTP (using the `download_url`) or taken directly from the provided base64 content, and sent as multipart form fields.
+All behavior is controlled via the `Valves` class at the top of your function.
+
+| Valve                      | Type    | Default                  | Description                                  |
+|----------------------------|---------|--------------------------|----------------------------------------------|
+| n8n_url                    | str     | —                        | n8n webhook endpoint                         |
+| n8n_bearer_token           | str     | —                        | Auth token for n8n (if needed)               |
+| file_transfer_mode         | str     | 'json_base64'            | 'json_base64' or 'multipart'                 |
+| prefer_uploaded_file_bytes | bool    | True                     | For non-images, load from disk or body       |
+| openwebui_data_path        | str     | '/app/backend/data'      | Parent dir for uploads                       |
+| openwebui_api_key          | str     | None                     | API key for OpenWebUI fetch (multipart)      |
+| max_file_size_mb           | float   | 25.0                     | Skip files over this size                    |
+| include_file_type          | bool    | True                     | Include type info in payload                 |
+| group_files_by_type        | bool    | False                    | Group files by type                          |
 
 ---
 
-## Usage in OpenWebUI
+## How it Works
 
-1. **Paste the `Pipe` class (from `n8n_pipe_v4.py`) into OpenWebUI's custom pipe interface.**
-2. **Configure your valves as needed.**
-3. **Upload files and send messages as usual.**
-4. **The response from your n8n workflow will be displayed in chat.**
+- **No need to run as a script:** OpenWebUI executes the function automatically when selected as a model.
+- **Handles all file types:** Images, PDFs, docs, and more.
+- **Smart logic:** Skips oversize files, groups by type if configured, and handles missing files gracefully.
+- **Modes:**
+  - `'json_base64'`: Files are base64-encoded and sent in JSON.
+  - `'multipart'`: Files are sent as multipart form-data (optionally fetched with API key).
 
 ---
 
 ## Testing
 
-A full test suite is provided in `test_n8n_pipe_v4.py`.
+To run the test suite locally (for development or troubleshooting):
 
-### Run the tests:
+1. Make sure you have Python 3.12+.
+2. Install the required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the tests:
+   ```bash
+   pytest test_n8n_pipe_v4.py
+   ```
 
-```bash
-pytest test_n8n_pipe_v4.py
+**requirements.txt:**
+```txt
+aiohttp>=3.9.0,<4.0.0
+pydantic>=2.0.0,<3.0.0
+pytest>=8.0.0,<9.0.0
 ```
-
-- Tests cover both file modes, error scenarios, and edge cases.
-- No need for a running OpenWebUI or n8n instance; all external calls are mocked.
 
 ---
 
 ## Troubleshooting
 
-- **File not found?**  
-  Ensure `OPENWEBUI_DATA_PATH` is correct and files are in the expected `uploads/` directory.
-- **File too large?**  
-  Adjust `max_file_size_mb` in your valves.
-- **Async test warnings?**  
-  Make sure `pytest-asyncio` is installed.
-- **Pydantic deprecation warnings?**  
-  These are safe to ignore for now but may require updating field definitions in the future.
+| Symptom                        | Solution/Check                                                      |
+|--------------------------------|---------------------------------------------------------------------|
+| File not found on disk         | Confirm `openwebui_data_path` and uploads dir structure.            |
+| Images not processed correctly | Ensure images are sent as base64 data URLs.                         |
+| Oversize files skipped         | Increase `max_file_size_mb` if needed.                              |
+| API key not sent in multipart  | Set `openwebui_api_key` in the valves.                              |
+| Test failures                  | Double-check field names and config (case-sensitive).               |
+| n8n webhook not called         | Confirm `n8n_url` and authentication.                               |
 
 ---
 
-## Example Valves Configuration
+## Contributing
 
-```python
-class Valves(BaseModel):
-    n8n_url: str = "https://n8n.example.com/webhook/your-webhook"
-    n8n_bearer_token: str = "your-token"
-    FILE_TRANSFER_MODE: str = "json_base64"
-    OPENWEBUI_DATA_PATH: str = "/app/backend/data"
-    max_file_size_mb: float = 25.0
-    debug_mode: bool = True
-    # ...other options...
-```
-
----
-
-## Community & Contribution
-
-- Issues and PRs welcome!
-- Please include test cases for new features.
-- For questions, open an issue or join the discussion in the OpenWebUI or n8n communities.
+- **Enhancements welcome!**
+  - If you improve file handling, add new features, or fix bugs, please share your updated function with the community.
+- **How to contribute:**
+  - Fork this repo or copy the function.
+  - Add your improvements.
+  - Open a pull request or share your changes on the OpenWebUI Discord/community.
+- **Ideas for contribution:**
+  - Support more file types or add custom logic.
+  - Improve error handling or logging.
+  - Add more tests or documentation.
 
 ---
 
-## License
-
-MIT License (or your preferred license)
+**Maintained by the OpenWebUI & n8n community.**
+_If you improve this pipe, please share back!_
 
 ---
-
-Let me know if you want to include any extra sections, usage diagrams, or want this README as a file!
